@@ -2,7 +2,7 @@
 
 **RISC-V JAL/JALR jump and control flow visualizer** — step through instruction sequences, watch the program counter move, see jump arcs animate in real time.
 
-Live at: https://riscvthai.org/jump-viz/
+Live at: https://jumpviz.riscvthai.org/
 
 \---
 
