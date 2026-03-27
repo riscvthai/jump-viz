@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RISC-V Jump Visualizer</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg0:#07090f;--bg1:#0d1220;--bg2:#141a2e;--bg3:#1b2240;--bg4:#222c50;
+  --border:#263055;--border2:#344070;
+  --text:#b8c8e8;--muted:#4a5a80;--muted2:#7a8aaa;
+  --amber:#f0a020;--amber-bg:#2a1e05;--amber-dim:#7a5010;
+  --teal:#00c9a0;--teal-bg:#002a22;
+  --coral:#ff6040;--coral-bg:#2a1008;
+  --blue:#4a9ae8;--blue-bg:#08203a;
+  --green:#30d068;--purple:#9060f0;
+  --r:6px;--mono:'IBM Plex Mono',monospace;--display:'Syne',sans-serif;
+}
+html{font-size:13px}
+body{
+  background:var(--bg0);color:var(--text);
+  font-family:var(--mono);min-height:100vh;
+  overflow:hidden;display:flex;flex-direction:column;
+}
+body::after{
+  content:'';position:fixed;inset:0;
+  background:repeating-linear-gradient(transparent,transparent 3px,rgba(0,0,0,.025) 3px,rgba(0,0,0,.025) 4px);
+  pointer-events:none;z-index:9999;
+}
+
+/* HEADER */
+header{
+  display:flex;align-items:center;gap:0;padding:0 20px;
+  background:var(--bg1);border-bottom:1px solid var(--border);
+  height:48px;flex-shrink:0;z-index:50;
+}
+.logo{
+  font-family:var(--display);font-size:15px;font-weight:800;
+  color:var(--amber);letter-spacing:.02em;margin-right:28px;white-space:nowrap;
+}
+.logo span{color:var(--teal)}
+.logo sub{font-size:9px;font-family:var(--mono);font-weight:400;color:var(--muted2);vertical-align:baseline;margin-left:4px}
+nav{display:flex}
+.nav-btn{
+  background:transparent;border:none;border-bottom:2px solid transparent;
+  color:var(--muted);cursor:pointer;font-family:var(--mono);font-size:11px;
+  font-weight:500;letter-spacing:.09em;padding:0 16px;height:48px;
+  text-transform:uppercase;transition:color .15s,border-color .15s;
+}
+.nav-btn:hover{color:var(--text)}
+.nav-btn.active{color:var(--amber);border-bottom-color:var(--amber)}
+.kbd-hint{margin-left:auto;font-size:10px;color:var(--muted);letter-spacing:.03em}
+.kbd{
+  display:inline-block;background:var(--bg3);border:1px solid var(--border2);
+  border-radius:3px;padding:1px 5px;font-size:10px;color:var(--muted2);margin:0 2px;
+}
+
+/* TABS */
+.tab-panel{display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0}
+.tab-panel.active{display:flex}
+
+/* TOOLBAR */
+.toolbar{
+  display:flex;align-items:center;gap:6px;padding:8px 16px;
+  background:var(--bg1);border-bottom:1px solid var(--border);flex-shrink:0;
+  flex-wrap:wrap;
+}
+select{
+  background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);
+  color:var(--text);font-family:var(--mono);font-size:12px;
+  padding:5px 10px;cursor:pointer;outline:none;
+}
+select:hover{border-color:var(--amber)}
+select:focus{border-color:var(--amber)}
+.btn{
+  background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);
+  color:var(--text);cursor:pointer;font-family:var(--mono);font-size:12px;
+  padding:5px 12px;transition:background .12s,border-color .12s,color .12s;white-space:nowrap;
+}
+.btn:hover{background:var(--bg3);border-color:var(--amber);color:var(--amber)}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--amber-bg);border-color:var(--amber);color:var(--amber)}
+.btn.primary:hover{background:var(--amber);color:var(--bg0);border-color:var(--amber)}
+.btn.danger{background:var(--coral-bg);border-color:var(--coral);color:var(--coral)}
+.btn:disabled{opacity:.25;pointer-events:none}
+.pc-display{
+  margin-left:auto;font-size:11px;color:var(--muted);letter-spacing:.04em;
+  display:flex;align-items:center;gap:8px;
+}
+.pc-display .pc-val{color:var(--teal);font-weight:500}
+.step-num{color:var(--muted2)}
+
+/* SIM BODY */
+.sim-body{display:flex;flex:1;overflow:hidden;min-height:0}
+
+/* CODE PANEL */
+.code-panel{
+  flex:1;overflow-y:auto;overflow-x:hidden;
+  position:relative;border-right:1px solid var(--border);min-width:0;
+}
+.code-header{
+  position:sticky;top:0;z-index:20;
+  display:flex;align-items:center;
+  padding:6px 12px 6px 64px;
+  background:var(--bg1);border-bottom:1px solid var(--border);
+  font-size:10px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;
+  gap:0;
+}
+.ch-addr{width:56px;flex-shrink:0}
+.ch-asm{flex:1}
+.instr-rows{position:relative}
+
+/* jump arc */
+.arc-overlay{
+  position:absolute;top:0;left:0;pointer-events:none;
+  z-index:5;overflow:visible;
+}
+@keyframes drawArc{to{stroke-dashoffset:0}}
+
+/* instruction rows */
+.instr-row{
+  display:flex;align-items:center;height:34px;
+  padding:0 14px 0 0;border-bottom:1px solid transparent;
+  transition:background .12s;cursor:default;
+  border-left:2px solid transparent;
+}
+.instr-row:hover{background:var(--bg2)}
+.instr-row.current{
+  background:var(--amber-bg)!important;
+  border-bottom-color:var(--border);border-left-color:var(--amber);
+}
+.instr-row.current .row-asm{color:var(--amber)}
+.instr-row.dim .row-asm{color:var(--muted)}
+.instr-row.dim:hover .row-asm{color:var(--muted2)}
+.instr-row.jumped-from{background:rgba(255,96,64,.06)!important}
+.instr-row.jumped-to{background:rgba(0,201,160,.06)!important}
+
+/* gutter */
+.row-gutter{
+  width:62px;flex-shrink:0;display:flex;align-items:center;
+  justify-content:flex-end;padding-right:10px;
+}
+.pc-arrow{font-size:12px;color:var(--amber);opacity:0;transition:opacity .2s}
+.instr-row.current .pc-arrow{opacity:1}
+
+.row-addr{
+  width:56px;flex-shrink:0;color:var(--muted);font-size:11px;padding-right:12px;
+}
+.row-asm{flex:1;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row-asm .kw{color:var(--blue)}
+.row-asm .reg{color:var(--teal)}
+.row-asm .imm{color:var(--green)}
+.row-asm .cmt{color:var(--muted);font-style:italic}
+.label-tag{
+  display:inline-block;background:var(--teal-bg);border:1px solid var(--teal);
+  border-radius:3px;color:var(--teal);font-size:9px;padding:0 5px;margin-right:6px;
+}
+.pseudo-tag{
+  display:inline-block;background:var(--blue-bg);border:1px solid var(--blue);
+  border-radius:3px;color:var(--blue);font-size:9px;padding:0 4px;margin-left:5px;
+}
+.ret-dot{
+  width:6px;height:6px;border-radius:50%;background:var(--coral);
+  flex-shrink:0;margin-left:8px;
+}
+.ret-dot-hint{
+  position:absolute;right:20px;font-size:9px;color:var(--coral);opacity:.7;
+}
+
+/* SIDE PANEL */
+.side-panel{
+  width:270px;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden;
+}
+.panel-sec{border-bottom:1px solid var(--border);flex-shrink:0}
+.panel-sec:last-child{border-bottom:none}
+.ph{
+  padding:7px 12px;background:var(--bg1);font-size:10px;
+  color:var(--muted);letter-spacing:.1em;text-transform:uppercase;
+  border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;
+}
+.ph .ph-right{margin-left:auto;font-size:9px;color:var(--muted);cursor:pointer}
+.ph .ph-right:hover{color:var(--amber)}
+
+/* reg bank */
+.reg-bank{flex:1;overflow-y:auto;padding:4px 2px}
+.reg-row{
+  display:flex;align-items:center;gap:0;height:24px;
+  padding:0 10px;border-radius:4px;transition:background .2s;
+}
+.reg-row.changed{background:var(--amber-bg)}
+@keyframes regFlash{0%{background:rgba(240,160,32,.4)} 100%{background:var(--amber-bg)}}
+.reg-row.flashing{animation:regFlash .5s ease-out forwards}
+.reg-abi{width:34px;flex-shrink:0;color:var(--teal);font-size:10.5px;font-weight:500}
+.reg-num{width:22px;flex-shrink:0;color:var(--muted);font-size:9.5px}
+.reg-sep{width:1px;background:var(--border);height:12px;margin:0 6px;flex-shrink:0}
+.reg-val{flex:1;text-align:right;font-size:11px;color:var(--muted2);font-weight:400}
+.reg-row.changed .reg-val,.reg-row.flashing .reg-val{color:var(--amber);font-weight:600}
+.reg-row.zero .reg-abi,.reg-row.zero .reg-val{color:var(--muted)}
+.reg-row.zero .reg-val{opacity:.4}
+
+/* mini decode */
+.decode-mini{padding:10px 12px;min-height:96px}
+.dm-title{font-size:9.5px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.dm-mnemonic{font-size:14px;font-weight:600;color:var(--amber);margin-bottom:8px}
+.bit-row{display:flex;gap:2px;flex-wrap:wrap;margin-bottom:6px}
+.bc{display:flex;flex-direction:column;align-items:center;gap:1px}
+.bc .bl{font-size:8px;color:var(--muted);white-space:nowrap}
+.bc .bv{
+  background:var(--bg3);border:1px solid var(--border);border-radius:3px;
+  padding:2px 3px;font-size:9.5px;min-width:16px;text-align:center;font-weight:500;
+}
+.bc.op .bv{background:var(--coral-bg);border-color:var(--coral);color:var(--coral)}
+.bc.rd .bv{background:var(--teal-bg);border-color:var(--teal);color:var(--teal)}
+.bc.im .bv{background:var(--amber-bg);border-color:var(--amber);color:var(--amber)}
+.bc.rs .bv{background:var(--blue-bg);border-color:var(--blue);color:var(--blue)}
+.bc.f3 .bv{background:var(--bg3);border-color:var(--purple);color:var(--purple)}
+
+/* NOTE STRIP */
+.note-strip{
+  padding:9px 16px;background:var(--bg1);border-top:1px solid var(--border);
+  flex-shrink:0;min-height:42px;display:flex;align-items:center;gap:10px;
+}
+.note-icon{color:var(--muted);flex-shrink:0;font-size:11px}
+.note-text{font-size:12px;color:var(--text);line-height:1.5}
+.note-text b{color:var(--amber)}
+
+/* ===== DECODE TAB ===== */
+.scrollable-tab{flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:24px}
+.dc{
+  background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);padding:20px;
+}
+.dc h2{font-family:var(--display);font-size:16px;font-weight:700;color:var(--amber);margin-bottom:3px}
+.dc .sub{color:var(--muted);font-size:11px;margin-bottom:16px;line-height:1.5}
+.legend{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.li{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted2)}
+.ld{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+.full-bits{display:flex;gap:1px;margin-bottom:4px}
+.fb{
+  flex:1;height:30px;border-radius:3px;display:flex;align-items:center;
+  justify-content:center;font-size:8px;font-weight:600;border:1px solid transparent;
+  min-width:0;overflow:hidden;
+}
+.bit-labels{
+  display:flex;justify-content:space-between;
+  font-size:9px;color:var(--muted);margin-bottom:12px;padding:0 1px;
+}
+.scramble-box{
+  background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;margin:12px 0;
+}
+.scramble-box h3{font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px}
+.scr{display:flex;align-items:center;gap:8px;font-size:11px;height:22px}
+.scr .sb{color:var(--amber);font-weight:600;min-width:90px}
+.scr .sa{color:var(--muted)}
+.scr .sd{color:var(--teal)}
+.scr .sn{color:var(--muted);font-size:10px}
+.dc-text{font-size:12px;color:var(--text);line-height:1.7;margin-bottom:8px}
+.dc-text b{color:var(--amber)}
+.dc-text code{
+  background:var(--bg3);border:1px solid var(--border);border-radius:3px;
+  padding:1px 5px;color:var(--amber);font-size:11px;
+}
+.dc-text small{color:var(--muted2);font-size:11px}
+
+/* ===== COMPARE TAB ===== */
+.cmp-h2{font-family:var(--display);font-size:14px;font-weight:700;color:var(--teal);margin-bottom:12px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{
+  text-align:left;padding:8px 12px;background:var(--bg2);
+  border:1px solid var(--border);color:var(--muted);
+  font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-weight:500;
+}
+td{padding:9px 12px;border:1px solid var(--border);vertical-align:top;line-height:1.5}
+tr:hover td{background:var(--bg2)}
+td code{
+  background:var(--bg3);border-radius:3px;padding:1px 5px;
+  color:var(--amber);font-size:11px;
+}
+.m{color:var(--coral)} .rv{color:var(--teal)}
+.diff-list{background:var(--bg1);border:1px solid var(--border);border-radius:var(--r)}
+.diff-item{
+  display:flex;gap:12px;padding:12px 16px;
+  border-bottom:1px solid var(--border);font-size:12px;line-height:1.6;
+}
+.diff-item:last-child{border-bottom:none}
+.diff-item .tag{
+  flex-shrink:0;background:var(--amber-bg);border:1px solid var(--amber-dim);
+  border-radius:3px;color:var(--amber);font-size:9px;padding:2px 6px;
+  height:fit-content;letter-spacing:.05em;text-transform:uppercase;margin-top:1px;
+}
+.diff-item .tag.tl{background:var(--teal-bg);border-color:var(--teal);color:var(--teal)}
+.diff-item .tag.co{background:var(--coral-bg);border-color:var(--coral);color:var(--coral)}
+.diff-item .tag.bl{background:var(--blue-bg);border-color:var(--blue);color:var(--blue)}
+.diff-item p{color:var(--text)}
+.diff-item code{
+  background:var(--bg3);border-radius:3px;padding:1px 4px;color:var(--amber);font-size:11px;
+}
+.diff-item b{color:var(--amber)}
+
+/* ===== PSEUDO TAB ===== */
+.ps-intro{font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:4px}
+.pc{
+  background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);
+  overflow:hidden;transition:border-color .2s;
+}
+.pc:hover{border-color:var(--border2)}
+.pc.open{border-color:var(--amber-dim)}
+.pch{
+  display:flex;align-items:center;gap:12px;padding:13px 16px;
+  cursor:pointer;user-select:none;
+}
+.pch:hover{background:var(--bg2)}
+.pn{font-size:15px;font-weight:600;color:var(--amber);min-width:130px}
+.ps{flex:1;font-size:12px;color:var(--muted2)}
+.pt{color:var(--muted);font-size:15px;transition:transform .2s}
+.pc.open .pt{transform:rotate(180deg)}
+.pcb{display:none;padding:0 16px 16px;border-top:1px solid var(--border)}
+.pc.open .pcb{display:block}
+.ev{display:flex;align-items:flex-start;gap:14px;margin-top:14px}
+.ev-from{
+  background:var(--bg2);border:1px solid var(--amber-dim);border-radius:var(--r);
+  padding:9px 14px;font-size:13px;color:var(--amber);font-weight:500;flex-shrink:0;
+}
+.ev-arr{color:var(--muted);font-size:20px;line-height:1;margin-top:8px;flex-shrink:0}
+.ev-to{display:flex;flex-direction:column;gap:5px;flex:1}
+.ev-instr{
+  background:var(--teal-bg);border:1px solid var(--teal);border-radius:var(--r);
+  padding:9px 14px;font-size:12px;color:var(--teal);
+}
+.ev-note{font-size:11.5px;color:var(--text);line-height:1.65;margin-top:8px}
+.ev-note b{color:var(--amber)}
+.ev-note code{
+  background:var(--bg3);border-radius:3px;padding:1px 5px;
+  color:var(--blue);font-size:11px;
+}
+
+/* SCROLLBARS */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">⬡ RISC<span>-V</span><sub>jump visualizer</sub></div>
+  <nav>
+    <button class="nav-btn active" onclick="switchTab('sim',this)">Simulate</button>
+    <button class="nav-btn" onclick="switchTab('dec',this)">Decode</button>
+    <button class="nav-btn" onclick="switchTab('cmp',this)">Compare</button>
+    <button class="nav-btn" onclick="switchTab('pse',this)">Pseudo</button>
+  </nav>
+  <span class="kbd-hint"><span class="kbd">←</span><span class="kbd">→</span> step &nbsp;<span class="kbd">R</span> reset &nbsp;<span class="kbd">Space</span> run</span>
+</header>
+
+<!-- ========================= SIMULATE ========================= -->
+<section class="tab-panel active" id="tab-sim">
+  <div class="toolbar">
+    <select id="prog-sel" onchange="loadProgram(this.value)">
+      <option value="basic-jal">① Basic JAL</option>
+      <option value="call-return">② Function Call &amp; Return</option>
+      <option value="jr-jump">③ Indirect Jump (jr)</option>
+    </select>
+    <button class="btn" id="btn-back" onclick="stepBack()" title="Step back (←)">◄ Back</button>
+    <button class="btn primary" id="btn-step" onclick="stepForward()" title="Step (→)">Step ►</button>
+    <button class="btn" id="btn-run" onclick="toggleRun()">▶▶ Run</button>
+    <button class="btn" id="btn-reset" onclick="resetSim()">⟳ Reset</button>
+    <div class="pc-display">
+      PC <span class="pc-val" id="pc-val">0x00000000</span>
+      <span class="step-num">· step <b id="step-num">0</b></span>
+    </div>
+  </div>
+
+  <div class="sim-body">
+    <div class="code-panel" id="code-panel">
+      <div class="code-header">
+        <span style="width:62px"></span>
+        <span class="ch-addr">ADDR</span>
+        <span class="ch-asm">INSTRUCTION</span>
+      </div>
+      <div class="instr-rows" id="instr-rows"></div>
+    </div>
+
+    <div class="side-panel">
+      <div class="panel-sec" style="flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0">
+        <div class="ph">Registers <span class="ph-right" id="reg-toggle" onclick="toggleRegView()">show all</span></div>
+        <div class="reg-bank" id="reg-bank"></div>
+      </div>
+      <div class="panel-sec decode-mini">
+        <div class="dm-title">Current instruction · encoding</div>
+        <div id="dm-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note-strip">
+    <span class="note-icon">▸</span>
+    <span class="note-text" id="note-text">Select a program and press <b>Step →</b> or <b>→</b> key to begin.</span>
+  </div>
+</section>
+
+<!-- ========================= DECODE ========================= -->
+<section class="tab-panel" id="tab-dec">
+  <div class="scrollable-tab">
+
+    <div class="dc">
+      <h2>JAL — Jump and Link</h2>
+      <div class="sub">UJ-format · opcode <code>1101111</code> · PC-relative offset · range ±1 MB · stores PC+4 in rd</div>
+      <div class="legend">
+        <span class="li"><span class="ld" style="background:#f0a020"></span>immediate (scrambled)</span>
+        <span class="li"><span class="ld" style="background:#00c9a0"></span>rd (dest register)</span>
+        <span class="li"><span class="ld" style="background:#ff6040"></span>opcode</span>
+      </div>
+      <div class="full-bits">
+        <div class="fb" style="flex:1;background:var(--amber-bg);border-color:var(--amber);color:var(--amber)">i[20]</div>
+        <div class="fb" style="flex:10;background:var(--amber-bg);border-color:var(--amber);color:var(--amber)">imm[10:1]</div>
+        <div class="fb" style="flex:1;background:var(--amber-bg);border-color:var(--amber);color:var(--amber)">i[11]</div>
+        <div class="fb" style="flex:8;background:var(--amber-bg);border-color:var(--amber);color:var(--amber)">imm[19:12]</div>
+        <div class="fb" style="flex:5;background:var(--teal-bg);border-color:var(--teal);color:var(--teal)">rd</div>
+        <div class="fb" style="flex:7;background:var(--coral-bg);border-color:var(--coral);color:var(--coral)">opcode</div>
+      </div>
+      <div class="bit-labels"><span>31</span><span>30 · · 21</span><span>20</span><span>19 · · · 12</span><span>11 · 7</span><span>6 · · 0</span></div>
+      <div class="scramble-box">
+        <h3>Immediate bit reconstruction</h3>
+        <div class="scr"><span class="sb">inst[31]</span><span class="sa">→</span><span class="sd">imm[20]</span><span class="sn">(sign bit — same position as B-type for shared sign-ext hardware)</span></div>
+        <div class="scr"><span class="sb">inst[30:21]</span><span class="sa">→</span><span class="sd">imm[10:1]</span><span class="sn">(main body, 10 bits)</span></div>
+        <div class="scr"><span class="sb">inst[20]</span><span class="sa">→</span><span class="sd">imm[11]</span><span class="sn">(swapped to reduce critical path in decode)</span></div>
+        <div class="scr"><span class="sb">inst[19:12]</span><span class="sa">→</span><span class="sd">imm[19:12]</span><span class="sn">(upper body)</span></div>
+        <div class="scr" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
+          <span class="sb" style="color:var(--green)">final</span><span class="sa">→</span>
+          <span class="sd" style="color:var(--text)">21-bit signed offset · bit[0] always 0 (not stored) · range ±1 MB</span>
+        </div>
+      </div>
+      <p class="dc-text">Target: <code>PC + sign_extend(imm)</code> — always PC-relative, no dependency on upper address bits.</p>
+      <p class="dc-text">The scrambling is designed so that the sign bit (imm[20]) is <b>always at inst[31]</b>, shared across J, B, I, and U formats — hardware sign-extension logic is reused.</p>
+      <p class="dc-text">Bit 0 of the immediate is never stored because RISC-V instructions are at minimum 2-byte aligned. The hardware always appends a 0.</p>
+    </div>
+
+    <div class="dc">
+      <h2>JALR — Jump and Link Register</h2>
+      <div class="sub">I-format · opcode <code>1100111</code> · funct3=<code>000</code> · indirect jump: (rs1 + imm) AND ~1</div>
+      <div class="legend">
+        <span class="li"><span class="ld" style="background:#f0a020"></span>imm[11:0]</span>
+        <span class="li"><span class="ld" style="background:#4a9ae8"></span>rs1 (base register)</span>
+        <span class="li"><span class="ld" style="background:var(--purple)"></span>funct3</span>
+        <span class="li"><span class="ld" style="background:#00c9a0"></span>rd</span>
+        <span class="li"><span class="ld" style="background:#ff6040"></span>opcode</span>
+      </div>
+      <div class="full-bits">
+        <div class="fb" style="flex:12;background:var(--amber-bg);border-color:var(--amber);color:var(--amber)">imm[11:0]</div>
+        <div class="fb" style="flex:5;background:var(--blue-bg);border-color:var(--blue);color:var(--blue)">rs1</div>
+        <div class="fb" style="flex:3;background:var(--bg3);border-color:var(--purple);color:var(--purple)">f3</div>
+        <div class="fb" style="flex:5;background:var(--teal-bg);border-color:var(--teal);color:var(--teal)">rd</div>
+        <div class="fb" style="flex:7;background:var(--coral-bg);border-color:var(--coral);color:var(--coral)">opcode</div>
+      </div>
+      <div class="bit-labels"><span>31 · · · 20</span><span>19 · 15</span><span>14 · 12</span><span>11 · 7</span><span>6 · 0</span></div>
+      <p class="dc-text">Target: <code>(rs1 + sign_extend(imm[11:0])) AND ~1</code></p>
+      <p class="dc-text">The <b>AND ~1</b> operation clears bit 0 of the computed address — a hardware guarantee that PC remains 2-byte aligned, regardless of register contents. <small>(Unlike MIPS JR, which can fault on odd addresses.)</small></p>
+      <p class="dc-text">The 12-bit signed immediate allows ±2 KB range <b>around the base register</b>. The register itself can hold any address — enabling arbitrary far jumps.</p>
+      <p class="dc-text">When <code>rd = x0</code>: return address is silently discarded (x0 is hardwired 0). This is how <code>ret</code> and <code>jr</code> pseudos work.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ========================= COMPARE ========================= -->
+<section class="tab-panel" id="tab-cmp">
+  <div class="scrollable-tab">
+
+    <div>
+      <h2 class="cmp-h2">Instruction Mapping: MIPS → RISC-V</h2>
+      <table>
+        <thead><tr><th>MIPS</th><th>RISC-V canonical</th><th>ABI pseudo</th><th>Key difference</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="m"><code>J target</code></td>
+            <td class="rv"><code>JAL x0, offset</code></td>
+            <td class="rv"><code>j offset</code></td>
+            <td>RISC-V uses PC-relative offset; MIPS uses absolute region-relative. rd=x0 discards link.</td>
+          </tr>
+          <tr>
+            <td class="m"><code>JAL target</code></td>
+            <td class="rv"><code>JAL x1, offset</code></td>
+            <td class="rv"><code>call sym</code></td>
+            <td>MIPS implicitly uses $31; RISC-V makes rd explicit. For far calls, assembler expands to AUIPC + JALR.</td>
+          </tr>
+          <tr>
+            <td class="m"><code>JR $rs</code></td>
+            <td class="rv"><code>JALR x0, rs, 0</code></td>
+            <td class="rv"><code>jr rs</code></td>
+            <td>RISC-V forces LSB=0 via AND~1. MIPS JR on odd address triggers Address Error exception.</td>
+          </tr>
+          <tr>
+            <td class="m"><code>JALR $rd, $rs</code></td>
+            <td class="rv"><code>JALR rd, rs1, imm</code></td>
+            <td>—</td>
+            <td>RISC-V adds a 12-bit immediate offset. MIPS JALR implicitly uses $31 if $rd omitted.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div>
+      <h2 class="cmp-h2">Key Behavioral Differences</h2>
+      <div class="diff-list">
+        <div class="diff-item">
+          <span class="tag">ADDR</span>
+          <p><b>MIPS J-type:</b> Target = <code>{ PC[31:28], instr_index[25:0], 2'b00 }</code>. The upper 4 bits come from the current PC — jumps cannot cross 256 MB boundaries.<br>
+          <b>RISC-V JAL:</b> Target = <code>PC + sign_extend(imm)</code>. Purely PC-relative, ±1 MB. No region dependency.</p>
+        </div>
+        <div class="diff-item">
+          <span class="tag co">IMM</span>
+          <p><b>MIPS:</b> 26-bit unsigned instr_index — only forward wrap-around is possible.<br>
+          <b>RISC-V JAL:</b> 21-bit signed offset, bit-scrambled to share sign-extension logic with B-type branches. Bit 0 always 0 (not stored).</p>
+        </div>
+        <div class="diff-item">
+          <span class="tag tl">LSB</span>
+          <p><b>RISC-V JALR</b> always clears bit 0 of the computed target (<code>AND ~1</code>) — enforced in hardware. The result is always 2-byte aligned regardless of register value.<br>
+          <b>MIPS JR</b> does not mask the low bit; an odd rs value triggers a hardware exception.</p>
+        </div>
+        <div class="diff-item">
+          <span class="tag bl">x0</span>
+          <p>RISC-V's <b>x0 is hardwired to 0</b> — writes are silently discarded. This enables <code>JAL x0, offset</code> (unconditional jump, no link) and <code>JALR x0, rs, 0</code> (pure indirect jump). MIPS requires a separate opcode for each behavior.</p>
+        </div>
+        <div class="diff-item">
+          <span class="tag">FAR</span>
+          <p><b>Far calls beyond ±1 MB:</b> Use <code>AUIPC x1, hi20(sym−PC)</code> + <code>JALR x1, x1, lo12(sym−PC)</code>. The assembler pseudo <code>call sym</code> selects between plain JAL (near) and this two-instruction sequence (far) automatically.</p>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <h2 class="cmp-h2">Register Conventions (ABI)</h2>
+      <table>
+        <thead><tr><th>Role</th><th>MIPS</th><th>RISC-V</th></tr></thead>
+        <tbody>
+          <tr><td>Return address</td><td class="m"><code>$ra</code> ($31), implicit in JAL</td><td class="rv"><code>ra</code> (x1), explicit rd field</td></tr>
+          <tr><td>Stack pointer</td><td class="m"><code>$sp</code> ($29)</td><td class="rv"><code>sp</code> (x2)</td></tr>
+          <tr><td>Args / return values</td><td class="m"><code>$a0–$a3</code>, <code>$v0–$v1</code></td><td class="rv"><code>a0–a7</code> (x10–x17)</td></tr>
+          <tr><td>Temporaries (caller-saved)</td><td class="m"><code>$t0–$t9</code></td><td class="rv"><code>t0–t6</code> (x5–x7, x28–x31)</td></tr>
+          <tr><td>Saved (callee-saved)</td><td class="m"><code>$s0–$s7</code></td><td class="rv"><code>s0–s11</code> (x8–x9, x18–x27)</td></tr>
+          <tr><td>Zero (hardwired)</td><td class="m"><code>$zero</code> ($0)</td><td class="rv"><code>zero</code> (x0)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ========================= PSEUDO ========================= -->
+<section class="tab-panel" id="tab-pse">
+  <div class="scrollable-tab">
+    <p class="ps-intro">Pseudo-instructions are assembler conveniences — they expand to one or two real RISC-V instructions at assembly time. Click any card to expand.</p>
+
+    <div class="pc" id="ps-ret">
+      <div class="pch" onclick="togglePs('ps-ret')">
+        <span class="pn">ret</span>
+        <span class="ps">Return from a function call</span>
+        <span class="pt">▾</span>
+      </div>
+      <div class="pcb">
+        <div class="ev">
+          <div class="ev-from">ret</div>
+          <div class="ev-arr">→</div>
+          <div class="ev-to"><div class="ev-instr">JALR x0, x1, 0</div></div>
+        </div>
+        <p class="ev-note">Jumps to the address stored in <b>ra (x1)</b> — placed there by the calling <code>JAL x1, ...</code>. <code>rd=x0</code> discards the new return address (x0 is hardwired 0 — the write is a no-op). The hardware <b>AND ~1</b> clears the LSB for alignment.</p>
+      </div>
+    </div>
+
+    <div class="pc" id="ps-call">
+      <div class="pch" onclick="togglePs('ps-call')">
+        <span class="pn">call sym</span>
+        <span class="ps">Far function call (beyond ±1 MB)</span>
+        <span class="pt">▾</span>
+      </div>
+      <div class="pcb">
+        <div class="ev">
+          <div class="ev-from">call sym</div>
+          <div class="ev-arr">→</div>
+          <div class="ev-to">
+            <div class="ev-instr">AUIPC x1, hi20(sym − PC)</div>
+            <div class="ev-instr">JALR  x1, x1, lo12(sym − PC)</div>
+          </div>
+        </div>
+        <p class="ev-note"><b>AUIPC</b> (Add Upper Immediate to PC) loads the upper 20 bits of the PC-relative offset into <b>ra</b>. <b>JALR</b> then adds the lower 12 bits and jumps. Together they cover the full 32-bit address space relative to PC. For near calls (±1 MB), the assembler emits plain <code>JAL x1, sym</code> instead.</p>
+      </div>
+    </div>
+
+    <div class="pc" id="ps-jr">
+      <div class="pch" onclick="togglePs('ps-jr')">
+        <span class="pn">jr rs</span>
+        <span class="ps">Indirect jump via register (no link)</span>
+        <span class="pt">▾</span>
+      </div>
+      <div class="pcb">
+        <div class="ev">
+          <div class="ev-from">jr rs</div>
+          <div class="ev-arr">→</div>
+          <div class="ev-to"><div class="ev-instr">JALR x0, rs, 0</div></div>
+        </div>
+        <p class="ev-note">Direct equivalent of MIPS <b>JR</b>. Jumps to address in register <b>rs</b>, offset 0. <code>rd=x0</code> means no link is stored. Used for computed jumps: function pointers, jump tables, dynamic dispatch. The <b>AND ~1</b> alignment guarantee is still applied.</p>
+      </div>
+    </div>
+
+    <div class="pc" id="ps-j">
+      <div class="pch" onclick="togglePs('ps-j')">
+        <span class="pn">j offset</span>
+        <span class="ps">Unconditional direct jump (no link)</span>
+        <span class="pt">▾</span>
+      </div>
+      <div class="pcb">
+        <div class="ev">
+          <div class="ev-from">j offset</div>
+          <div class="ev-arr">→</div>
+          <div class="ev-to"><div class="ev-instr">JAL x0, offset</div></div>
+        </div>
+        <p class="ev-note">MIPS <b>J</b> equivalent. Uses <code>JAL</code> with <code>rd=x0</code> to discard the return address. PC-relative, ±1 MB range. Because x0 is hardwired to 0, the write is a true no-op — no architectural state changes except PC.</p>
+      </div>
+    </div>
+
+    <div class="pc" id="ps-li">
+      <div class="pch" onclick="togglePs('ps-li')">
+        <span class="pn">li rd, imm</span>
+        <span class="ps">Load immediate — often used to set a jump target before jr</span>
+        <span class="pt">▾</span>
+      </div>
+      <div class="pcb">
+        <div class="ev">
+          <div class="ev-from">li rd, imm</div>
+          <div class="ev-arr">→</div>
+          <div class="ev-to">
+            <div class="ev-instr">ADDI rd, x0, imm &nbsp;<span style="font-size:10px;color:var(--muted)">(if |imm| ≤ 2047)</span></div>
+            <div class="ev-instr" style="margin-top:4px">LUI rd, hi20 + ADDI rd, rd, lo12 &nbsp;<span style="font-size:10px;color:var(--muted)">(larger values)</span></div>
+          </div>
+        </div>
+        <p class="ev-note">Not a jump instruction itself, but critical when paired with <code>jr</code>. For small addresses a single <b>ADDI</b> suffices. For full 32-bit addresses (like jump table entries or function pointers), <b>LUI + ADDI</b> are needed to fill all 32 bits.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+// ============================================================
+// DATA
+// ============================================================
+const ABI=['zero','ra','sp','gp','tp','t0','t1','t2',
+           's0','s1','a0','a1','a2','a3','a4','a5',
+           'a6','a7','s2','s3','s4','s5','s6','s7',
+           's8','s9','s10','s11','t3','t4','t5','t6'];
+
+const PROGRAMS={
+  'basic-jal':{
+    code:[
+      {addr:0x00,type:'ADDI',rd:5, rs1:0, imm:10,  asm:'ADDI  t0, zero, 10'},
+      {addr:0x04,type:'JAL', rd:1, targetAddr:0x18, asm:'JAL   ra, skip'},
+      {addr:0x08,type:'ADDI',rd:6, rs1:0, imm:11,  asm:'ADDI  t1, zero, 11',dim:true},
+      {addr:0x0C,type:'ADDI',rd:7, rs1:0, imm:12,  asm:'ADDI  t2, zero, 12',dim:true},
+      {addr:0x10,type:'ADDI',rd:8, rs1:0, imm:13,  asm:'ADDI  s0, zero, 13',dim:true},
+      {addr:0x14,type:'ADDI',rd:9, rs1:0, imm:14,  asm:'ADDI  s1, zero, 14',dim:true},
+      {addr:0x18,type:'ADDI',rd:10,rs1:0, imm:99,  asm:'ADDI  a0, zero, 99',label:'skip'},
+      {addr:0x1C,type:'NOP',                        asm:'NOP'},
+    ]
+  },
+  'call-return':{
+    code:[
+      {addr:0x00,type:'ADDI',rd:10,rs1:0, imm:5,   asm:'ADDI  a0, zero, 5'},
+      {addr:0x04,type:'JAL', rd:1, targetAddr:0x20, asm:'JAL   ra, func'},
+      {addr:0x08,type:'ADDI',rd:11,rs1:0, imm:42,  asm:'ADDI  a1, zero, 42',retTarget:true},
+      {addr:0x0C,type:'NOP',                        asm:'NOP'},
+      {addr:0x10,type:'NOP',                        asm:'NOP'},
+      {addr:0x14,type:'NOP',                        asm:'NOP'},
+      {addr:0x18,type:'NOP',                        asm:'NOP'},
+      {addr:0x1C,type:'NOP',                        asm:'NOP'},
+      {addr:0x20,type:'ADDI',rd:12,rs1:0, imm:10,  asm:'ADDI  a2, zero, 10',label:'func'},
+      {addr:0x24,type:'ADD', rd:10,rs1:10,rs2:12,   asm:'ADD   a0, a0, a2'},
+      {addr:0x28,type:'JALR',rd:0, rs1:1, imm:0,   asm:'ret',pseudo:'ret'},
+    ]
+  },
+  'jr-jump':{
+    code:[
+      {addr:0x00,type:'ADDI',rd:5, rs1:0, imm:0x20, asm:'ADDI  t0, zero, 0x20'},
+      {addr:0x04,type:'JALR',rd:0, rs1:5, imm:0,    asm:'jr    t0',pseudo:'jr'},
+      {addr:0x08,type:'ADDI',rd:6, rs1:0, imm:99,   asm:'ADDI  t1, zero, 99',dim:true},
+      {addr:0x0C,type:'ADDI',rd:7, rs1:0, imm:88,   asm:'ADDI  t2, zero, 88',dim:true},
+      {addr:0x10,type:'NOP',                         asm:'NOP',dim:true},
+      {addr:0x14,type:'NOP',                         asm:'NOP',dim:true},
+      {addr:0x18,type:'NOP',                         asm:'NOP',dim:true},
+      {addr:0x1C,type:'NOP',                         asm:'NOP',dim:true},
+      {addr:0x20,type:'ADDI',rd:8, rs1:0, imm:55,   asm:'ADDI  s0, zero, 55',label:'target'},
+      {addr:0x24,type:'NOP',                         asm:'NOP'},
+    ]
+  }
+};
+
+// ============================================================
+// ENGINE
+// ============================================================
+const h8=n=>(n>>>0).toString(16).padStart(8,'0');
+const h4=n=>(n>>>0).toString(16).padStart(4,'0');
+
+function initState(){
+  return{pc:0,regs:new Array(32).fill(0),changed:[],
+         note:'Press <b>Step ►</b> or <b>→</b> key to begin.',
+         jumped:false,jumpSrc:null,jumpDst:null};
+}
+
+function exec(st,instr){
+  if(!instr) return{...st,changed:[],note:'End of program — no instruction at PC.',jumped:false};
+  const regs=[...st.regs];
+  let pc=st.pc,note='',jumped=false,jumpSrc=null,jumpDst=null;
+  const ch=[];
+  const wr=(r,v)=>{if(r!==0){regs[r]=v>>>0;ch.push(r);}};
+
+  switch(instr.type){
+    case 'JAL':{
+      const ret=pc+4,tgt=instr.targetAddr;
+      wr(instr.rd,ret); pc=tgt; jumped=true; jumpSrc=st.pc; jumpDst=tgt;
+      const off=tgt-st.pc;
+      note=instr.pseudo==='j'
+        ?`j → JAL x0: PC ← 0x${h8(tgt)} (offset ${off>=0?'+':''}${off}), rd=x0 discards link`
+        :`JAL: <b>${ABI[instr.rd]}</b> (x${instr.rd}) ← 0x${h8(ret)} &nbsp;·&nbsp; PC ← 0x${h8(tgt)} (offset ${off>=0?'+':''}${off})`;
+      break;
+    }
+    case 'JALR':{
+      const base=regs[instr.rs1],tgt=(base+instr.imm)&~1;
+      const ret=pc+4;
+      wr(instr.rd,ret); pc=tgt>>>0; jumped=true; jumpSrc=st.pc; jumpDst=pc;
+      if(instr.pseudo==='ret')
+        note=`ret → JALR x0, ra, 0: PC ← ra (0x${h8(base)}) AND ~1 = 0x${h8(tgt)}`;
+      else if(instr.pseudo==='jr')
+        note=`jr ${ABI[instr.rs1]} → JALR x0, ${ABI[instr.rs1]}, 0: PC ← 0x${h8(base)} AND ~1 = 0x${h8(tgt)}`;
+      else
+        note=`JALR: <b>${ABI[instr.rd]}</b> ← 0x${h8(ret)} &nbsp;·&nbsp; PC ← (0x${h8(base)} + ${instr.imm}) AND ~1 = 0x${h8(tgt)}`;
+      break;
+    }
+    case 'ADDI':{
+      const r=(regs[instr.rs1]+instr.imm)|0;
+      wr(instr.rd,r); pc=pc+4;
+      note=`ADDI: <b>${ABI[instr.rd]}</b> ← ${ABI[instr.rs1]}(${regs[instr.rs1]}) + ${instr.imm} = ${r>>>0} (0x${h8(r)})`;
+      break;
+    }
+    case 'ADD':{
+      const r=(regs[instr.rs1]+regs[instr.rs2])|0;
+      wr(instr.rd,r); pc=pc+4;
+      note=`ADD: <b>${ABI[instr.rd]}</b> ← ${ABI[instr.rs1]}(${regs[instr.rs1]}) + ${ABI[instr.rs2]}(${regs[instr.rs2]}) = ${r>>>0}`;
+      break;
+    }
+    case 'NOP': pc=pc+4; note='NOP: no operation, PC += 4'; break;
+    default: pc=pc+4; note='Unknown instruction type.';
+  }
+  regs[0]=0;
+  return{pc,regs,changed:ch,note,jumped,jumpSrc,jumpDst};
+}
+
+// ============================================================
+// STATE
+// ============================================================
+let prog=PROGRAMS['basic-jal'];
+let hist=[initState()];
+let cur=0;
+let autoTimer=null;
+let running=false;
+let showAllRegs=false;
+
+const curSt=()=>hist[cur];
+const getI=addr=>prog.code.find(i=>i.addr===addr);
+const getIdx=addr=>prog.code.findIndex(i=>i.addr===addr);
+
+// ============================================================
+// RENDER
+// ============================================================
+const ROW=34;
+
+function hlAsm(s){
+  return s
+    .replace(/^(ADDI|ADD|JAL|JALR|NOP)\b/,'<span class="kw">$1</span>')
+    .replace(/\b(ret|jr)\b/,'<span class="kw">$1</span>')
+    .replace(/\b(zero|ra|sp|gp|tp|t\d+|s\d+|a\d+|x\d+)\b/g,'<span class="reg">$&</span>')
+    .replace(/\b(0x[0-9a-fA-F]+|\d+)\b/g,'<span class="imm">$&</span>')
+    .replace(/(;.*)$/,'<span class="cmt">$1</span>');
+}
+
+function renderCode(){
+  const st=curSt();
+  const rows=document.getElementById('instr-rows');
+
+  // Jump arc
+  let arc='';
+  if(st.jumped && st.jumpSrc!==null && st.jumpDst!==null){
+    const si=getIdx(st.jumpSrc), di=getIdx(st.jumpDst);
+    if(si>=0 && di>=0){
+      const H=prog.code.length*ROW+8;
+      const sy=si*ROW+ROW/2, dy=di*ROW+ROW/2;
+      const x1=54, bx=10;
+      const d=`M${x1} ${sy} C${bx} ${sy},${bx} ${dy},${x1} ${dy}`;
+      const len=2*Math.abs(x1-bx)+Math.abs(dy-sy)+20;
+      const col=st.jumped?'#f0a020':'#00c9a0';
+      arc=`<svg class="arc-overlay" style="height:${H}px;width:100%">
+        <defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+          <path d="M1 2L8 5L1 8" fill="none" stroke="${col}" stroke-width="2" stroke-linecap="round"/>
+        </marker></defs>
+        <path d="${d}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linecap="round"
+          stroke-dasharray="${len}" stroke-dashoffset="${len}" marker-end="url(#ah)"
+          style="animation:drawArc .45s ease-out forwards"/>
+      </svg>`;
+    }
+  }
+
+  let html='';
+  for(const instr of prog.code){
+    const isCur=instr.addr===st.pc;
+    const isJSrc=st.jumped && st.jumpSrc===instr.addr;
+    const isJDst=st.jumped && st.jumpDst===instr.addr;
+    let cls='instr-row';
+    if(isCur) cls+=' current';
+    if(instr.dim) cls+=' dim';
+    if(isJSrc && !isCur) cls+=' jumped-from';
+    if(isJDst && !isCur) cls+=' jumped-to';
+
+    const lbl=instr.label?`<span class="label-tag">${instr.label}:</span>`:'';
+    const ps=instr.pseudo?`<span class="pseudo-tag">→ JALR</span>`:'';
+    const ret=instr.retTarget?`<span class="ret-dot" title="return lands here"></span>`:'';
+
+    html+=`<div class="${cls}">
+      <div class="row-gutter"><span class="pc-arrow">▶</span></div>
+      <div class="row-addr">0x${h4(instr.addr)}</div>
+      <div class="row-asm">${lbl}${hlAsm(instr.asm)}${ps}</div>
+      ${ret}
+    </div>`;
+  }
+
+  rows.innerHTML=arc+html;
+  const el=rows.querySelector('.current');
+  if(el) el.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+
+function renderRegs(){
+  const st=curSt();
+  const bank=document.getElementById('reg-bank');
+  const scrollTop=bank.scrollTop;
+  let html='';
+  for(let i=0;i<32;i++){
+    const v=st.regs[i];
+    if(!showAllRegs && v===0 && !st.changed.includes(i) && i>1) continue;
+    const ch=st.changed.includes(i);
+    const isZero=v===0;
+    let cls='reg-row';
+    if(ch) cls+=' changed flashing';
+    if(isZero && !ch) cls+=' zero';
+    html+=`<div class="${cls}">
+      <span class="reg-abi">${ABI[i]}</span>
+      <span class="reg-num">x${i}</span>
+      <span class="reg-sep"></span>
+      <span class="reg-val">0x${h8(v)}</span>
+    </div>`;
+  }
+  if(!html) html='<div style="padding:12px;font-size:11px;color:var(--muted)">All registers = 0x00000000</div>';
+  bank.innerHTML=html;
+  bank.scrollTop=scrollTop;
+}
+
+function renderDecodeMini(){
+  const st=curSt();
+  const instr=getI(st.pc);
+  const el=document.getElementById('dm-content');
+  if(!instr){el.innerHTML='<span style="color:var(--muted);font-size:11px">—</span>';return;}
+  
+  let mn=instr.pseudo||instr.type;
+  let bits='';
+  if(instr.type==='JAL'){
+    const imm=(instr.targetAddr-instr.addr)|0;
+    bits=`<div class="bit-row">
+      <div class="bc im"><span class="bl">i[20]</span><span class="bv">${(imm>>20)&1}</span></div>
+      <div class="bc im"><span class="bl">i[10:1]</span><span class="bv">${(imm>>1)&0x3FF}</span></div>
+      <div class="bc im"><span class="bl">i[11]</span><span class="bv">${(imm>>11)&1}</span></div>
+      <div class="bc im"><span class="bl">i[19:12]</span><span class="bv">${(imm>>12)&0xFF}</span></div>
+      <div class="bc rd"><span class="bl">rd</span><span class="bv">${instr.rd}</span></div>
+      <div class="bc op"><span class="bl">op</span><span class="bv">1101111</span></div>
+    </div><div style="font-size:10px;color:var(--muted)">imm = ${imm>=0?'+':''}${imm} &nbsp;·&nbsp; target = 0x${h8(instr.targetAddr)}</div>`;
+  } else if(instr.type==='JALR'){
+    bits=`<div class="bit-row">
+      <div class="bc im"><span class="bl">imm[11:0]</span><span class="bv">${instr.imm&0xFFF}</span></div>
+      <div class="bc rs"><span class="bl">rs1(${ABI[instr.rs1]})</span><span class="bv">${instr.rs1}</span></div>
+      <div class="bc f3"><span class="bl">f3</span><span class="bv">000</span></div>
+      <div class="bc rd"><span class="bl">rd</span><span class="bv">${instr.rd}</span></div>
+      <div class="bc op"><span class="bl">op</span><span class="bv">1100111</span></div>
+    </div><div style="font-size:10px;color:var(--muted)">target = (${ABI[instr.rs1]} + ${instr.imm}) AND ~1</div>`;
+  } else if(instr.type==='ADDI'){
+    bits=`<div class="bit-row">
+      <div class="bc im"><span class="bl">imm[11:0]</span><span class="bv">${instr.imm&0xFFF}</span></div>
+      <div class="bc rs"><span class="bl">rs1</span><span class="bv">${instr.rs1}</span></div>
+      <div class="bc f3"><span class="bl">f3</span><span class="bv">000</span></div>
+      <div class="bc rd"><span class="bl">rd</span><span class="bv">${instr.rd}</span></div>
+      <div class="bc op"><span class="bl">op</span><span class="bv">0010011</span></div>
+    </div>`;
+  } else {
+    bits=`<span style="color:var(--muted);font-size:11px">${instr.type} — I-format</span>`;
+  }
+  el.innerHTML=`<div class="dm-mnemonic">${mn}</div>${bits}`;
+}
+
+function renderNote(){
+  document.getElementById('note-text').innerHTML=curSt().note;
+}
+
+function renderPC(){
+  const st=curSt();
+  document.getElementById('pc-val').textContent='0x'+h8(st.pc);
+  document.getElementById('step-num').textContent=cur;
+  document.getElementById('btn-back').disabled=(cur===0);
+  const instr=getI(st.pc);
+  document.getElementById('btn-step').disabled=!instr;
+}
+
+function render(){
+  renderCode();
+  renderRegs();
+  renderDecodeMini();
+  renderNote();
+  renderPC();
+}
+
+// ============================================================
+// CONTROLS
+// ============================================================
+function stepForward(){
+  const st=curSt();
+  const instr=getI(st.pc);
+  if(!instr) return;
+  const next=exec(st,instr);
+  hist=hist.slice(0,cur+1);
+  hist.push(next);
+  cur++;
+  render();
+}
+
+function stepBack(){
+  if(cur>0){cur--;render();}
+}
+
+function resetSim(){
+  stopRun();
+  hist=[initState()];
+  cur=0;
+  render();
+}
+
+function toggleRun(){
+  if(running){stopRun();}
+  else{startRun();}
+}
+function startRun(){
+  running=true;
+  document.getElementById('btn-run').textContent='■ Stop';
+  document.getElementById('btn-run').classList.add('danger');
+  autoTimer=setInterval(()=>{
+    const instr=getI(curSt().pc);
+    if(!instr){stopRun();return;}
+    stepForward();
+  },650);
+}
+function stopRun(){
+  running=false;
+  clearInterval(autoTimer);
+  document.getElementById('btn-run').textContent='▶▶ Run';
+  document.getElementById('btn-run').classList.remove('danger');
+}
+
+function loadProgram(id){
+  stopRun();
+  prog=PROGRAMS[id];
+  hist=[initState()];
+  cur=0;
+  render();
+}
+
+function toggleRegView(){
+  showAllRegs=!showAllRegs;
+  document.getElementById('reg-toggle').textContent=showAllRegs?'hide zeros':'show all';
+  renderRegs();
+}
+
+// ============================================================
+// TAB + PSEUDO
+// ============================================================
+function switchTab(id,btn){
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  btn.classList.add('active');
+}
+function togglePs(id){document.getElementById(id).classList.toggle('open');}
+
+// ============================================================
+// KEYBOARD
+// ============================================================
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+  if(e.key==='ArrowRight'){e.preventDefault();stepForward();}
+  else if(e.key==='ArrowLeft'){e.preventDefault();stepBack();}
+  else if(e.key===' '){e.preventDefault();toggleRun();}
+  else if(e.key==='r'||e.key==='R'){resetSim();}
+  else if(e.key==='1') loadProgramKey('basic-jal');
+  else if(e.key==='2') loadProgramKey('call-return');
+  else if(e.key==='3') loadProgramKey('jr-jump');
+});
+function loadProgramKey(id){
+  document.getElementById('prog-sel').value=id;
+  loadProgram(id);
+}
+
+// ============================================================
+// INIT
+// ============================================================
+render();
+</script>
+</body>
+</html>
